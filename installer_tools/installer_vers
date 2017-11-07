@@ -1,0 +1,43 @@
+#!/bin/bash
+APP="${1}"
+
+if [ -z "${APP}" ]; then
+  echo "Usage: $(basename ${0}) INSTALL_APP"
+  exit 1
+fi
+
+tmp_dir=$(/usr/bin/mktemp -d)
+ESD_DIR="${tmp_dir}/esd"
+BASE_DIR="${tmp_dir}/base"
+PLIST="${BASE_DIR}/System/Library/CoreServices/SystemVersion.plist"
+
+cleanup() {
+  /usr/bin/hdiutil eject -quiet "${BASE_DIR}"
+  /usr/bin/hdiutil eject -quiet "${ESD_DIR}"
+  rm -rf "${tmp_dir}"
+}
+
+trap cleanup EXIT
+
+die () {
+  echo "${1}"
+  exit 1
+}
+
+mkdir "${ESD_DIR}"
+mkdir "${BASE_DIR}"
+
+if [ -f "${APP}/Contents/SharedSupport/BaseSystem.dmg" ]; then
+  /usr/bin/hdiutil attach "${APP}/Contents/SharedSupport/BaseSystem.dmg" -quiet -mountpoint "${BASE_DIR}" -nobrowse -noverify || die "Problem getting version. Maybe BaseSystem.dmg is already mounted?"
+elif [ -f "${APP}/Contents/SharedSupport/InstallESD.dmg" ]; then
+  /usr/bin/hdiutil attach "${APP}/Contents/SharedSupport/InstallESD.dmg" -quiet -mountpoint "${ESD_DIR}" -nobrowse -noverify || die "Problem getting version. Maybe InstallESD.dmg is already mounted?"
+  /usr/bin/hdiutil attach "${ESD_DIR}/BaseSystem.dmg" -quiet -mountpoint "${BASE_DIR}" -nobrowse -noverify || die "Problem getting version. Maybe BaseSystem.dmg is already mounted?"
+else
+  die "${APP} does not appear to be a macOS Installer App"
+fi
+
+version=$(defaults read "${PLIST}" ProductVersion)
+build=$(defaults read "${PLIST}" ProductBuildVersion)
+
+printf "ProductVersion:\t%s\nBuildVersion:\t%s\n" "${version}" "${build}"
+

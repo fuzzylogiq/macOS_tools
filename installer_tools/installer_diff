@@ -1,0 +1,159 @@
+#!/usr/bin/python
+# encoding: utf-8
+'''
+diff_os.py
+
+Shows the differences in file paths installed by two macOS installer apps or esds
+
+Copyright (C) Ben Goodstein 2017
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program.  If not, see <http://www.gnu.org/licenses/>.
+'''
+
+import os
+import plistlib
+import subprocess
+import sys
+import atexit
+import glob
+import argparse
+
+ESDPATH = 'Contents/SharedSupport/InstallESD.dmg'
+our_mounts = []
+
+@atexit.register
+def cleanup():
+    if our_mounts != []:
+        print 'Cleaning up...'
+        for mount in our_mounts:
+            proc = subprocess.call(('/usr/bin/hdiutil',
+                                    'detach',
+                                    '-force',
+                                    '-quiet',
+                                    mount))
+        print 'Done.'
+
+def mount(dmg):
+    try:
+        proc = subprocess.Popen(('/usr/bin/hdiutil',
+                                 'attach',
+                                 '-plist',
+                                 '-mountrandom', '/private/tmp',
+                                 '-nobrowse',
+                                 dmg),
+                                stdout=subprocess.PIPE,
+                                stderr=subprocess.PIPE)
+        stdout, stderr = proc.communicate()
+    except OSError as err:
+        return
+    if proc.returncode != 0:
+        return stderr
+    pliststr = stdout
+    try:
+        output = plistlib.readPlistFromString(pliststr)
+    except:
+        return False
+    first = [x for x in output['system-entities'] if x.get('mount-point')][0]
+    print first['mount-point']
+    return first['mount-point']
+
+
+def mount_os_installer(installer):
+    internal_esd = os.path.join(installer, ESDPATH)
+    if os.path.isfile(internal_esd):
+        return mount(internal_esd)
+    if os.path.isfile(installer):
+        return mount(installer)
+
+
+def collate_boms(mounted_esd, dirs=[]):
+    pkg_path = os.path.join(mounted_esd, 'Packages')
+    pkgs = glob.glob(os.path.join(pkg_path, '*.pkg'))
+    boms = []
+    paths = []
+    for pkg in pkgs:
+        proc = subprocess.Popen(('/usr/sbin/pkgutil',
+                                 '--bom',
+                                 pkg),
+                                stdout=subprocess.PIPE,
+                                stderr=subprocess.PIPE)
+        stdout, stderr = proc.communicate()
+        if not proc.returncode:
+            boms.append(stdout.strip())
+    for bom in boms:
+        proc = subprocess.Popen(('/usr/bin/lsbom',
+                                 '-s',
+                                 bom),
+                                stdout=subprocess.PIPE,
+                                stderr=subprocess.PIPE)
+        stdout, stderr = proc.communicate()
+        if not proc.returncode:
+            for line in stdout.splitlines():
+                line = line.lstrip('.').rstrip()
+                for dir in dirs:
+                    if line.startswith(dir):
+                        paths.append(line)
+    return paths
+
+
+def compare_boms(a, b):
+    s = set(a)
+    diff = [x for x in b if x not in s]
+    return diff
+
+
+def main():
+
+    p = argparse.ArgumentParser(description='Shows the file path  differences '
+                                'between two macOS installs')
+    p.add_argument('--path',
+                   metavar='PATH',
+                   action='append',
+                   help='Paths to compare. Can be specified multiple times')
+    p.add_argument('installers',
+                   metavar='INSTALLER',
+                   nargs=2,
+                   help='Path to an OSX/macOS installer. Can be the installer '
+                   '.app or an InstallESD.dmg')
+    args = p.parse_args()
+
+    dmgs = []
+    dmgs_to_mount = args.installers
+    paths = ['']
+    if args.path:
+        paths = args.path
+
+    for dmg in dmgs_to_mount:
+        dmg_dict = {}
+        dmg_dict['installer'] = dmg
+        dmg_dict['mount_point'] = mount_os_installer(dmg)
+        if dmg_dict['mount_point']:
+            our_mounts.append(dmg_dict['mount_point'])
+            dmg_dict['paths'] = collate_boms(dmg_dict['mount_point'], paths)
+        else:
+            print 'Error mounting %s' % dmg
+            sys.exit(1)
+        dmgs.append(dmg_dict)
+
+    print 'Present in %s but not %s:' % (dmgs[1]['installer'], dmgs[0]['installer'])
+    diff = compare_boms(dmgs[0]['paths'], dmgs[1]['paths'])
+    for path in diff:
+        print '\033[1;32m' + path + '\033[0;m'
+    print 'Present in %s but not %s:' % (dmgs[0]['installer'], dmgs[1]['installer'])
+    diff = compare_boms(dmgs[1]['paths'], dmgs[0]['paths'])
+    for path in diff:
+        print '\033[1;31m' + path + '\033[0;m'
+
+if __name__ == '__main__':
+    main()
