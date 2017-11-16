@@ -37,11 +37,11 @@ def cleanup():
     if our_mounts != []:
         print 'Cleaning up...'
         for mount in our_mounts:
-            proc = subprocess.call(('/usr/bin/hdiutil',
-                                    'detach',
-                                    '-force',
-                                    '-quiet',
-                                    mount))
+            subprocess.call(('/usr/bin/hdiutil',
+                             'detach',
+                             '-force',
+                             '-quiet',
+                             mount))
         print 'Done.'
 
 def mount(dmg):
@@ -55,7 +55,7 @@ def mount(dmg):
                                 stdout=subprocess.PIPE,
                                 stderr=subprocess.PIPE)
         stdout, stderr = proc.communicate()
-    except OSError as err:
+    except OSError:
         return
     if proc.returncode != 0:
         return stderr
@@ -65,7 +65,6 @@ def mount(dmg):
     except:
         return False
     first = [x for x in output['system-entities'] if x.get('mount-point')][0]
-    print first['mount-point']
     return first['mount-point']
 
 
