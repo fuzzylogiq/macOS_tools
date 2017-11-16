@@ -1,7 +1,7 @@
 #!/usr/bin/python
 # encoding: utf-8
 '''
-diff_os.py
+installer_diff
 
 Shows the differences in file paths installed by two macOS installer apps or esds
 
