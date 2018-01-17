@@ -83,17 +83,8 @@ def collate_boms(mounted_esd, dirs=[]):
     paths = []
     for pkg in pkgs:
         proc = subprocess.Popen(('/usr/sbin/pkgutil',
-                                 '--bom',
-                                 pkg),
-                                stdout=subprocess.PIPE,
-                                stderr=subprocess.PIPE)
-        stdout, stderr = proc.communicate()
-        if not proc.returncode:
-            boms.append(stdout.strip())
-    for bom in boms:
-        proc = subprocess.Popen(('/usr/bin/lsbom',
-                                 '-s',
-                                 bom),
+				'--payload-files',
+				pkg),
                                 stdout=subprocess.PIPE,
                                 stderr=subprocess.PIPE)
         stdout, stderr = proc.communicate()
@@ -133,6 +124,7 @@ def main():
     if args.path:
         paths = args.path
 
+    print "Mounting InstallESDs and collating payload files..."
     for dmg in dmgs_to_mount:
         dmg_dict = {}
         dmg_dict['installer'] = dmg
@@ -140,10 +132,10 @@ def main():
         if dmg_dict['mount_point']:
             our_mounts.append(dmg_dict['mount_point'])
             dmg_dict['paths'] = collate_boms(dmg_dict['mount_point'], paths)
+            dmgs.append(dmg_dict)
         else:
             print 'Error mounting %s' % dmg
             sys.exit(1)
-        dmgs.append(dmg_dict)
 
     print 'Present in %s but not %s:' % (dmgs[1]['installer'], dmgs[0]['installer'])
     diff = compare_boms(dmgs[0]['paths'], dmgs[1]['paths'])
